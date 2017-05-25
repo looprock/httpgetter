@@ -80,6 +80,9 @@ func main() {
     // }
 
     // events = []riemanngo.Event {}
+
+    // probably need something like this:
+    // https://stackoverflow.com/questions/19818878/slice-append-from-channels
     events := []Revent {}
 	  for range os.Args[1:]{
 	    fmt.Println(<-ch)
