@@ -1,0 +1,5 @@
+[
+"http://master.beta.cluster:2379/health",
+"https://git.ojointernal.com/health_check.json?token=ksGLAG67E3ZK932M8yjm",
+"http://master.prod.cluster:2379/health"
+]
