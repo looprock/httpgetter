@@ -2,98 +2,76 @@ package main
 
 import (
      "fmt"
-     "os"
      "net/http"
      "time"
      "io/ioutil"
+     "encoding/json"
 		 "strings"
-		 //"github.com/riemann/riemann-go-client"
+     "flag"
+		 "github.com/riemann/riemann-go-client"
 )
 
-// this is for documentation of what riemanngo.Event is expecting
-type Revent struct {
-	Ttl         float32
-	// Time        time.Time
-	Tags        []string
-	// Host        string // Defaults to os.Hostname()
-	State       string
-	Service     string
-	Metric      interface{} // Could be Int, Float32, Float64
-	Description string
-	// Attributes  map[string]string
-}
-
-func printSlice(s []Revent) {
-	fmt.Printf("len=%d cap=%d %v\n", len(s), cap(s), s)
-}
-
-//func MakeRequest(url string, ch chan<-riemanngo.Event) {
-func MakeRequest(url string, ch chan<-Revent) {
+func MakeRequest(url string, ch chan<-string, riemannserver *string) {
+  riemann := riemanngo.NewTcpClient(*riemannserver)
+  err := riemann.Connect(5)
+  if err != nil {
+      panic(err)
+  }
   start := time.Now()
-	timeout := time.Duration(1 * time.Second)
+	timeout := time.Duration(10 * time.Second)
 	client := http.Client{
 		Timeout: timeout,
 	}
-  resp, _ := client.Get(url)
-  // service = cmd_args[0].split('://')[1].replace('.', '_').replace('/', '--').split("?")[0]
+  resp, err := client.Get(url)
+  if err != nil {
+      fmt.Println(err)
+      return
+  }
 	a := strings.Split(url, "://")
 	b := strings.Split(a[1], "?")
   c := strings.Replace(b[0], ".", "_", -1)
 	d := strings.Replace(c, "/", "--", -1)
   secs := time.Since(start).Seconds()
-  ioutil.ReadAll(resp.Body)
-	// var tags [1]string
+  body, err := ioutil.ReadAll(resp.Body)
+  if err != nil {
+      fmt.Println(err)
+      return
+  }
   tags := make([]string, 0)
-  tags = append(tags, "fakesrv")
-	//tags[0] = "fakesrv"
-	//t1 := riemanngo.Event{d, secs, tags}
-  t1 := Revent{60, tags, "OK", d, secs, "http check" }
-  ch <- t1
+  tags = append(tags, "http-check")
+  riemanngo.SendEvent(riemann, &riemanngo.Event{
+    Host: "http-check",
+    Service: d,
+    Metric: secs,
+    Tags: tags,
+  })
+  defer riemann.Close()
+  ch <- fmt.Sprintf("%s - site: %s, elapsed: %.2f, length: %d", time.Now().Format(time.RFC850), url, secs, len(body))
 }
 
 func main() {
-	// c := riemanngo.NewTcpClient("127.0.0.1:5555")
-	// err := c.Connect(5)
-	// if err != nil {
-	//     panic(err)
-	// }
-	// https://play.golang.org/p/ireemFw2Xi
+  checkconfig := flag.String("config", "/etc/checks.json", "JSON site list file")
+  riemannserver := flag.String("riemann", "127.0.0.1:5555", "riemann server and port")
+  flag.Parse()
+  data, err := ioutil.ReadFile(*checkconfig)
+  if err != nil {
+      fmt.Println(err)
+      return
+  }
+  var slice []string
+  err = json.Unmarshal(data, &slice)
+  if err != nil {
+      fmt.Println(err)
+      return
+  }
 	for {
-	  start := time.Now()
-		//ch := make(chan riemanngo.Event)
-    ch := make(chan Revent)
-	  for _,url := range os.Args[1:]{
-	      go MakeRequest(url, ch)
+    ch := make(chan string)
+	  for _,url := range slice {
+	      go MakeRequest(url, ch, riemannserver)
 	  }
-
-    // events = []riemanngo.Event {
-    //     riemanngo.Event{
-    //         Service: "hello",
-    //         Metric:  100,
-    //         Tags: []string{"hello"},
-    //     },
-    // riemanngo.Event{
-    //         Service: "goodbye",
-    //         Metric:  200,
-    //         Tags: []string{"goodbye"},
-    //     },
-    // }
-
-    // events = []riemanngo.Event {}
-
-    // probably need something like this:
-    // https://stackoverflow.com/questions/19818878/slice-append-from-channels
-    events := []Revent {}
-	  for range os.Args[1:]{
-	    fmt.Println(<-ch)
-      // var chanevent Revent
-      //chanevent <-ch
-      //events = append(events, chanevent)
-	  }
-    fmt.Print(len(events))
-	  fmt.Printf("%.2fs elapsed\n", time.Since(start).Seconds())
-		fmt.Printf("sleeping 5\n")
+	  // for range slice{
+	  //   fmt.Println(<-ch)
+	  // }
 		time.Sleep(5 * time.Second)
 	}
-	// defer c.Close()
 }
