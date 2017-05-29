@@ -1,7 +1,5 @@
 package main
 
-// crappy implementation that doesn't batch riemann events
-
 import (
      "fmt"
      "net/http"
@@ -20,17 +18,25 @@ func MakeRequest(url string, ch chan<-string, riemannserver *string) {
       panic(err)
   }
   start := time.Now()
-	timeout := time.Duration(1 * time.Second)
+	timeout := time.Duration(10 * time.Second)
 	client := http.Client{
 		Timeout: timeout,
 	}
-  resp, _ := client.Get(url)
+  resp, err := client.Get(url)
+  if err != nil {
+      fmt.Println(err)
+      return
+  }
 	a := strings.Split(url, "://")
 	b := strings.Split(a[1], "?")
   c := strings.Replace(b[0], ".", "_", -1)
 	d := strings.Replace(c, "/", "--", -1)
   secs := time.Since(start).Seconds()
-  body, _ := ioutil.ReadAll(resp.Body)
+  body, err := ioutil.ReadAll(resp.Body)
+  if err != nil {
+      fmt.Println(err)
+      return
+  }
   tags := make([]string, 0)
   tags = append(tags, "http-check")
   riemanngo.SendEvent(riemann, &riemanngo.Event{
@@ -63,9 +69,9 @@ func main() {
 	  for _,url := range slice {
 	      go MakeRequest(url, ch, riemannserver)
 	  }
-	  for range slice{
-	    fmt.Println(<-ch)
-	  }
+	  // for range slice{
+	  //   fmt.Println(<-ch)
+	  // }
 		time.Sleep(5 * time.Second)
 	}
 }
